@@ -9,7 +9,14 @@
 #include <DHT.h>
 #include <DHT_U.h>
 
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+
+//needed for library
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
+
+
 
 #define DEBUG true
 
@@ -35,15 +42,29 @@ const char* server = "api.thingspeak.com";
 // WiFi Setup
 WiFiClient client;
 
-void setup() {
-  Serial.begin(9600);
-  Serial.setTimeout(2000);
+void setupWiFiAuto() {
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+  //reset saved settings
+  //  wifiManager.resetSettings();
 
-  // Wait for serial to initialize
-  while (!Serial) { }
+  if (WiFi.SSID() != "") wifiManager.setConfigPortalTimeout(60); //If no access point name has been previously entered disable timeout.
 
-  setupWiFi();
 
+  //set custom ip for portal
+  wifiManager.setAPStaticIPConfig(IPAddress(14, 6, 6, 9), IPAddress(10, 0, 0, 1), IPAddress(255, 255, 255, 0));
+
+  //fetches ssid and pass from eeprom and tries to connect
+  //if it does not connect it starts an access point with the specified name "WaterMonSetup"
+  //and goes into a blocking loop awaiting configuration
+  wifiManager.autoConnect("WaterMonSetup");
+  //or use this for auto generated name ESP + ChipID
+  //wifiManager.autoConnect();
+
+
+  //if you get here you have connected to the WiFi
+  Serial.println("connected...yeey :)");
 }
 
 void setupWiFi() {
@@ -132,6 +153,59 @@ void setupDHT() {
   delayMS = sensor.min_delay / 1000;
 }
 
+float readLDR() {
+  int sensorValue = analogRead(A0);   // read the input on analog pin 0
+  //  float voltage = sensorValue * (5.0 / 1023.0);   // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V)
+  //  float voltage = sensorValue * (3.0 / 1023.0);   // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V)
+  float voltage = sensorValue;
+
+  //  <= 200 - Dark
+
+  return voltage;
+}
+
+void sendData(float temperature, float humidity, float lumen) {
+
+  if (client.connect(server, 80)) { // "184.106.153.149" or api.thingspeak.com
+
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(temperature);
+    postStr += "&field2=";
+    postStr += String(humidity);
+    postStr += "&field3=";
+    postStr += String(lumen);
+    postStr += "\r\n\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n");
+    client.print(postStr);
+  }
+  client.stop();
+
+}
+
+
+
+void setup() {
+  Serial.begin(9600);
+  Serial.setTimeout(2000);
+
+  // Wait for serial to initialize
+  while (!Serial) { }
+
+  setupWiFiAuto();
+
+}
+
+
+
 void loop() {
 
   // Get temperature event and print its value.
@@ -151,52 +225,25 @@ void loop() {
     return;
   }
 
-  if (client.connect(server, 80)) { // "184.106.153.149" or api.thingspeak.com
-
-    String postStr = apiKey;
-    postStr += "&field1=";
-    postStr += String(t);
-    postStr += "&field2=";
-    postStr += String(h);
-    postStr += "\r\n\r\n";
-
-    client.print("POST /update HTTP/1.1\n");
-    client.print("Host: api.thingspeak.com\n");
-    client.print("Connection: close\n");
-    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
-    client.print("Content-Type: application/x-www-form-urlencoded\n");
-    client.print("Content-Length: ");
-    client.print(postStr.length());
-    client.print("\n\n");
-    client.print(postStr);
-  }
-  client.stop();
-
+  float l = readLDR();
 
   if (DEBUG) {
-    // Delay between measurements.
-    delay(delayMS);
-    // Get temperature event and print its value.
-    sensors_event_t event;
-    dht.temperature().getEvent(&event);
-    if (isnan(event.temperature)) {
-      Serial.println("Error reading temperature!");
-    }
-    else {
-      Serial.print("Temperature: ");
-      Serial.print(event.temperature);
-      Serial.println(" *C");
-    }
-    // Get humidity event and print its value.
-    dht.humidity().getEvent(&event);
-    if (isnan(event.relative_humidity)) {
-      Serial.println("Error reading humidity!");
-    }
-    else {
-      Serial.print("Humidity: ");
-      Serial.print(event.relative_humidity);
-      Serial.println("%");
-    }
+    Serial.print("LDR: ");
+    Serial.print(l);   // print out the value you read
+    Serial.println(" LUMEN");
+  }
+
+  // Send data to cloud
+  sendData(t, h, l);
+
+  if (DEBUG) {
+    Serial.print("Temperature: ");
+    Serial.print(t);
+    Serial.println(" *C");
+
+    Serial.print("Humidity: ");
+    Serial.print(h);
+    Serial.println("%");
   }
 
   if (DEBUG) {
