@@ -119,13 +119,12 @@ void setupWiFi() {
 
   Serial.print("Authenticating Device...");
 
-  setupDHT();
 }
 
 void setupDHT() {
   // Initialize device.
   dht.begin();
-  Serial.println("DHTxx Unified Sensor Example");
+  Serial.println("DHTxx Unified Sensor");
   // Print temperature sensor details.
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
@@ -202,6 +201,8 @@ void setup() {
 
   setupWiFiAuto();
 
+  setupDHT();
+
 }
 
 
@@ -222,6 +223,7 @@ void loop() {
     if (DEBUG) {
       Serial.println("Failed to read from DHT sensor!");
     }
+    delay(5000);
     return;
   }
 
